@@ -1,0 +1,145 @@
+// =============================================================================
+// LoRaWAN Session Key Generation Protocol (SPDL)
+// =============================================================================
+// This protocol models a secure session key exchange between a Network Server
+// and a Join Server using public key cryptography. The Join Server generates 
+// a fresh session key and securely transmits it to the Network Server.
+// Both parties then verify the exchange using the new session key.
+//
+// Abbreviations expanded for clarity:
+// NS  -> NetworkServer
+// JS  -> JoinServer
+// nNS -> nonceNetworkServer
+// nJS -> nonceJoinServer
+// SK  -> SessionKey
+// pk  -> publicKey
+// sk  -> privateKey
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Global Cryptographic Definitions
+// -----------------------------------------------------------------------------
+// Define the public key (publicKey) and secret/private key (privateKey) functions.
+// The 'inversekeys' declaration tells Scyther that a message encrypted with 
+// the public key can only be decrypted by the corresponding private key.
+const publicKey: Function;
+secret privateKey: Function;
+inversekeys(publicKey, privateKey);
+
+protocol SessionKeyGeneration(NetworkServer, JoinServer)
+{
+    // =========================================================================
+    // Role: Network Server
+    // The initiator of the protocol who requests a new session key.
+    // =========================================================================
+    role NetworkServer
+    {
+        // --- Variable Declarations ---
+        // Generate a fresh, random number (nonce) for this specific session 
+        // to prevent replay attacks.
+        fresh nonceNetworkServer: Nonce;
+        
+        // Placeholders to store the values that will be received from the Join Server.
+        // They are marked as 'var' because the Network Server does not generate them.
+        var nonceJoinServer: Nonce;
+        var SessionKey: Nonce;
+
+        // --- Protocol Execution ---
+        // Step 1: The Network Server sends a request to the Join Server.
+        // The message includes their identities and the Network Server's nonce.
+        // It is encrypted using the Join Server's public key, ensuring only 
+        // the Join Server can read it.
+        send_1(NetworkServer, JoinServer, 
+               { NetworkServer, JoinServer, nonceNetworkServer }publicKey(JoinServer)
+        );
+
+        // Step 2: The Network Server receives a response from the Join Server.
+        // This message contains both nonces and the newly generated Session Key.
+        // It is encrypted with the Network Server's public key for confidentiality.
+        recv_2(JoinServer, NetworkServer, 
+               { JoinServer, NetworkServer, nonceNetworkServer, nonceJoinServer, SessionKey }publicKey(NetworkServer)
+        );
+
+        // Step 3: The Network Server sends a final confirmation message.
+        // This message proves to the Join Server that the Network Server successfully 
+        // received the Session Key, as the message is symmetrically encrypted 
+        // using the newly established Session Key itself.
+        send_3(NetworkServer, JoinServer, 
+               { NetworkServer, JoinServer, nonceNetworkServer, nonceJoinServer }SessionKey
+        );
+
+        // --- Security Claims ---
+        // We instruct Scyther to verify that the following security goals are met:
+
+        // The Session Key must not be leaked to an adversary.
+        claim_NetworkServerSecret(NetworkServer, Secret, SessionKey);
+        
+        // The Join Server must be active and participating.
+        claim_NetworkServerAlive(NetworkServer, Alive);                     
+        
+        // Both servers must agree they are communicating with each other.
+        claim_NetworkServerWeakAgree(NetworkServer, Weakagree);             
+        
+        // Both servers must agree on the specific message contents (non-injective).
+        claim_NetworkServerNiAgree(NetworkServer, Niagree);                 
+        
+        // Both servers must execute the messages in the exact expected order.
+        claim_NetworkServerNiSynch(NetworkServer, Nisynch);                 
+    }
+
+    // =========================================================================
+    // Role: Join Server
+    // The trusted authority that generates and distributes the session key.
+    // =========================================================================
+    role JoinServer
+    {
+        // --- Variable Declarations ---
+        // Placeholder to store the nonce received from the Network Server.
+        var nonceNetworkServer: Nonce;
+        
+        // Generate a fresh nonce and the fresh Session Key for this session.
+        // They are marked as 'fresh' because the Join Server authors them.
+        fresh nonceJoinServer: Nonce;
+        fresh SessionKey: Nonce;
+
+        // --- Protocol Execution ---
+        // Step 1: The Join Server receives the initial request from the Network Server.
+        // It implicitly uses its private key to decrypt the payload and extract 
+        // the Network Server's nonce.
+        recv_1(NetworkServer, JoinServer, 
+               { NetworkServer, JoinServer, nonceNetworkServer }publicKey(JoinServer)
+        );
+
+        // Step 2: The Join Server responds to the Network Server.
+        // It packages both nonces and the newly generated Session Key, encrypting 
+        // the entire payload with the Network Server's public key.
+        send_2(JoinServer, NetworkServer, 
+               { JoinServer, NetworkServer, nonceNetworkServer, nonceJoinServer, SessionKey }publicKey(NetworkServer)
+        );
+
+        // Step 3: The Join Server receives the confirmation message.
+        // It decrypts this message using the newly generated Session Key, verifying 
+        // that the Network Server successfully received the key.
+        recv_3(NetworkServer, JoinServer, 
+               { NetworkServer, JoinServer, nonceNetworkServer, nonceJoinServer }SessionKey
+        );
+
+        // --- Security Claims ---
+        // Verify the same security goals from the perspective of the Join Server:
+        
+        // The Session Key must remain secure.
+        claim_JoinServerSecret(JoinServer, Secret, SessionKey);             
+        
+        // The Network Server must be active.
+        claim_JoinServerAlive(JoinServer, Alive);                           
+        
+        // The Network Server must agree on the communication.
+        claim_JoinServerWeakAgree(JoinServer, Weakagree);                   
+        
+        // Agreement on message data.
+        claim_JoinServerNiAgree(JoinServer, Niagree);                       
+        
+        // Synchronization of message order.
+        claim_JoinServerNiSynch(JoinServer, Nisynch);                       
+    }
+}

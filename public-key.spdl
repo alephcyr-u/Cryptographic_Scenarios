@@ -1,0 +1,119 @@
+/*
+================================================================================
+PROTOCOL SPECIFICATION: Public Key (Asymmetric) Communication Protocol
+================================================================================
+Description:
+    This protocol models a scenario where an Initiator and a Responder want to 
+    exchange secret messages over an insecure network, but they have never met 
+    and do not share a secret password or key. 
+
+    Instead, they rely on Public Key Infrastructure (PKI). 
+    - The Initiator encrypts their message using the Responder's Public Key.
+    - The Responder encrypts their reply using the Initiator's Public Key.
+================================================================================
+*/
+
+/* Global Declarations:
+   We declare a custom data type named 'MessageText' to clearly designate 
+   the nature of our payload data fields before they are encrypted. 
+*/
+usertype MessageText;
+
+protocol PublicKeyCommunicationProtocol(Initiator, Responder) 
+{
+    /* ========================================================================
+       ROLE: Initiator
+       ========================================================================
+       This role defines the behavior of the party who starts the communication 
+       by encrypting a message for the Responder.
+    */
+    role Initiator 
+    {
+        /* Local Declarations for the Initiator:
+           1. 'fresh': A brand-new, unique message generated locally by the Initiator.
+           2. 'var': A local variable placeholder to store the decrypted reply 
+              received from the network.
+        */
+        fresh InitiatorMessage: MessageText;
+        var ResponderMessage: MessageText;
+
+        /* Step 1: Send the encrypted message.
+           The Initiator sends their unique message to the Responder. 
+           
+           Syntax Explanation:
+           - '{ InitiatorMessage }' indicates that the content inside is encrypted.
+           - 'pk(Responder)' is Scyther's built-in notation for the Public Key 
+             belonging to the Responder. Because it is public, anyone (even the 
+             intruder) knows this key and can use it to encrypt a message. However, 
+             only the Responder possesses the matching Secret Key to decrypt it.
+        */
+        send_1(Initiator, Responder, { InitiatorMessage }pk(Responder));
+
+        /* Step 2: Receive the encrypted reply.
+           The Initiator expects a reply from the Responder. 
+           
+           Syntax Explanation:
+           - The incoming message is expected to be encrypted with 'pk(Initiator)'.
+           - Scyther automatically knows that the Initiator possesses their own 
+             Secret Key ('sk(Initiator)') and can therefore decrypt this package 
+             to read 'ResponderMessage'.
+        */
+        recv_2(Responder, Initiator, { ResponderMessage }pk(Initiator));
+
+        /* Security Claims / Properties for the Initiator:
+           
+           Claim 1 (Secret): We test whether 'InitiatorMessage' remains confidential.
+           Expectation: This will PASS. Only the Responder has the private key 
+           needed to decrypt it, so the network intruder cannot read it.
+        */
+        claim(Initiator, Secret, InitiatorMessage);
+
+        /* Claim 2 (Alive): We verify that the Responder is actively alive and 
+           participating.
+        */
+        claim(Initiator, Alive);
+    };
+
+    /* ========================================================================
+       ROLE: Responder
+       ========================================================================
+       This role defines the behavior of the party who receives the message, 
+       decrypts it using their private key, and sends back an encrypted response.
+    */
+    role Responder 
+    {
+        /* Local Declarations for the Responder:
+           The Responder needs a variable to hold the decrypted incoming text, 
+           and a fresh variable to generate their own reply.
+        */
+        var InitiatorMessage: MessageText;
+        fresh ResponderMessage: MessageText;
+
+        /* Step 1: Receive the encrypted message.
+           The Responder receives the encrypted package from the network. 
+           Because the Responder possesses their own secret private key, 
+           'sk(Responder)', they are mathematically able to decrypt the package 
+           that was encrypted with 'pk(Responder)'.
+        */
+        recv_1(Initiator, Responder, { InitiatorMessage }pk(Responder));
+
+        /* Step 2: Send the encrypted reply.
+           The Responder creates their unique 'ResponderMessage', encrypts it 
+           using the Initiator's Public Key ('pk(Initiator)'), and transmits 
+           it back across the network.
+        */
+        send_2(Responder, Initiator, { ResponderMessage }pk(Initiator));
+
+        /* Security Claims / Properties for the Responder:
+           
+           Claim 1 (Secret): We check if 'ResponderMessage' remains confidential.
+           Expectation: This will PASS. The message is encrypted with the 
+           Initiator's public key, so only the Initiator can read it.
+        */
+        claim(Responder, Secret, ResponderMessage);
+
+        /* Claim 2 (Alive): We verify that the Initiator is actively alive.
+        */
+        claim(Responder, Alive);
+    };
+};

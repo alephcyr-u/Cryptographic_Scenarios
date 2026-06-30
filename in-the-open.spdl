@@ -1,0 +1,112 @@
+/*
+================================================================================
+PROTOCOL SPECIFICATION: Plain-Text Communication Protocol
+================================================================================
+Description:
+    This protocol models a basic two-way communication sequence where an 
+    Initiator sends a plain-text message to a Responder, and the Responder 
+    replies with another plain-text message. 
+
+    There is absolutely no encryption, hashing, or digital signature mechanism 
+    applied to these transmissions. It simulates a completely insecure, 
+    open-network broadcast environment.
+================================================================================
+*/
+
+/* Global Declarations:
+   We declare a custom data type named 'MessageText' to clearly designate 
+   the nature of our plain-text data fields. 
+*/
+usertype MessageText;
+
+protocol PlainTextCommunicationProtocol(Initiator, Responder) 
+{
+    /* ========================================================================
+       ROLE: Initiator
+       ========================================================================
+       This role defines the behavior of the party who starts the communication 
+       sequence.
+    */
+    role Initiator 
+    {
+        /* Local Declarations for the Initiator:
+           1. 'fresh': Indicates a brand-new, unique data item generated locally 
+              by the Initiator for this specific session.
+           2. 'var': A local variable placeholder used to store data received 
+              from the network during execution.
+        */
+        fresh InitiatorMessage: MessageText;
+        var ResponderMessage: MessageText;
+
+        /* Step 1: Send the initial plain-text message.
+           The Initiator sends 'InitiatorMessage' directly to the Responder. 
+           Notice that the term is transmitted directly as a parameter without 
+           any curly braces or key infrastructure (such as encryption).
+        */
+        send_1(Initiator, Responder, InitiatorMessage);
+
+        /* Step 2: Receive the plain-text reply.
+           The Initiator waits to receive a message originating from the Responder. 
+           Once received, the incoming text is bound to the rigid local variable 
+           'ResponderMessage'.
+        */
+        recv_2(Responder, Initiator, ResponderMessage);
+
+        /* Security Claims / Properties for the Initiator:
+           We place claims here to instruct the Scyther tool on what properties 
+           to evaluate. 
+           
+           Claim 1 (Secret): We test whether 'InitiatorMessage' remains confidential.
+           Expectation: Scyther will report an ATTACK (Fail) because the message 
+           was sent completely unencrypted across an untrusted network.
+        */
+        claim(Initiator, Secret, InitiatorMessage);
+
+        /* Claim 2 (Alive): We test if the Responder is actively alive and 
+           participating in the session.
+        */
+        claim(Initiator, Alive);
+    };
+
+    /* ========================================================================
+       ROLE: Responder
+       ========================================================================
+       This role defines the behavior of the party who listens for the initial 
+       communication and sends a reply back.
+    */
+    role Responder 
+    {
+        /* Local Declarations for the Responder:
+           The Responder mirrors the types, holding a rigid variable to capture 
+           the incoming payload and a freshly generated item for the reply.
+        */
+        var InitiatorMessage: MessageText;
+        fresh ResponderMessage: MessageText;
+
+        /* Step 1: Receive the initial plain-text message.
+           The Responder listens for an incoming transmission from the Initiator. 
+           The matching label '_1' structurally pairs this network event with the 
+           Initiator's 'send_1' event.
+        */
+        recv_1(Initiator, Responder, InitiatorMessage);
+
+        /* Step 2: Send the plain-text reply.
+           The Responder generates its unique 'ResponderMessage' text and transmits 
+           it back to the Initiator in the clear.
+        */
+        send_2(Responder, Initiator, ResponderMessage);
+
+        /* Security Claims / Properties for the Responder:
+           
+           Claim 1 (Secret): We test whether 'ResponderMessage' remains confidential.
+           Expectation: Scyther will report an ATTACK (Fail) for this claim as well, 
+           as an active or passive intruder can intercept plain text effortlessly.
+        */
+        claim(Responder, Secret, ResponderMessage);
+
+        /* Claim 2 (Alive): We test if the Initiator is alive and active from 
+           the Responder's perspective.
+        */
+        claim(Responder, Alive);
+    };
+};

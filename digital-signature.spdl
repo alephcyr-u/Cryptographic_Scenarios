@@ -1,0 +1,113 @@
+/*
+================================================================================
+PROTOCOL SPECIFICATION: Digital Signature Authentication Protocol
+================================================================================
+Description:
+    This protocol models a scenario where an Initiator and a Responder want to 
+    publicly exchange messages, but they need absolute mathematical proof of 
+    each other's identity. 
+
+    They achieve this using Digital Signatures. 
+    - The Initiator sends a plain-text message paired with a "signature" 
+      (the message encrypted with the Initiator's Secret Key).
+    - The Responder verifies the signature, and then replies with their own 
+      message and signature.
+================================================================================
+*/
+
+/* Global Declarations:
+   We declare a custom data type named 'MessageText' for the payload.
+*/
+usertype MessageText;
+
+protocol DigitalSignatureIdentityProtocol(Initiator, Responder) 
+{
+    /* ========================================================================
+       ROLE: Initiator
+       ========================================================================
+       This role defines the party who starts the communication and proves 
+       their identity to the Responder.
+    */
+    role Initiator 
+    {
+        /* Local Declarations:
+           A fresh message to send, and a variable to store the incoming reply.
+        */
+        fresh InitiatorMessage: MessageText;
+        var ResponderMessage: MessageText;
+
+        /* Step 1: Send the message and the Digital Signature.
+           The Initiator sends a paired package (indicated by the parentheses).
+           
+           Syntax Explanation:
+           - 'InitiatorMessage' is the plain-text payload.
+           - '{ InitiatorMessage }sk(Initiator)' is the Digital Signature. 
+             By encrypting the message with their own Secret Key ('sk(Initiator)'), 
+             the Initiator creates a cryptographic proof of origin.
+        */
+        send_1(Initiator, Responder, (InitiatorMessage, { InitiatorMessage }sk(Initiator)));
+
+        /* Step 2: Receive the signed reply.
+           The Initiator expects a paired package back. The second half of the 
+           pair must structurally match a message encrypted by the Responder's 
+           Secret Key ('sk(Responder)'). If an intruder tries to forge this, 
+           the mathematical pattern match will fail.
+        */
+        recv_2(Responder, Initiator, (ResponderMessage, { ResponderMessage }sk(Responder)));
+
+        /* Security Claims / Properties for the Initiator:
+           
+           Claim 1 (Niagree - Non-Injective Agreement): This is a strong authentication 
+           claim. We are asking Scyther to verify that the Responder actually 
+           intended to send 'ResponderMessage' to the Initiator, and that no one 
+           tampered with it. 
+           Expectation: This will PASS because the signature cannot be forged.
+        */
+        claim(Initiator, Niagree);
+
+        /* Claim 2 (Alive): We verify that the Responder is actively participating.
+        */
+        claim(Initiator, Alive);
+    };
+
+    /* ========================================================================
+       ROLE: Responder
+       ========================================================================
+       This role receives the signature, verifies the identity of the Initiator, 
+       and replies with their own signature.
+    */
+    role Responder 
+    {
+        /* Local Declarations:
+           A variable for the incoming text, and a fresh text for the reply.
+        */
+        var InitiatorMessage: MessageText;
+        fresh ResponderMessage: MessageText;
+
+        /* Step 1: Receive the signed message.
+           The Responder receives the paired package. Scyther automatically models 
+           that the Responder uses the publicly available 'pk(Initiator)' to 
+           evaluate the signature '{ InitiatorMessage }sk(Initiator)' and ensure 
+           it matches the plain-text 'InitiatorMessage'.
+        */
+        recv_1(Initiator, Responder, (InitiatorMessage, { InitiatorMessage }sk(Initiator)));
+
+        /* Step 2: Send the signed reply.
+           The Responder creates their own signature using their mathematically 
+           unique Secret Key, proving their identity to the Initiator.
+        */
+        send_2(Responder, Initiator, (ResponderMessage, { ResponderMessage }sk(Responder)));
+
+        /* Security Claims / Properties for the Responder:
+           
+           Claim 1 (Niagree): We ask Scyther to verify that the Initiator is 
+           who they claim to be, and that the message was not altered.
+           Expectation: This will PASS.
+        */
+        claim(Responder, Niagree);
+
+        /* Claim 2 (Alive): We verify the Initiator is actively alive.
+        */
+        claim(Responder, Alive);
+    };
+};

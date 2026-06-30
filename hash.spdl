@@ -1,0 +1,114 @@
+/*
+================================================================================
+PROTOCOL SPECIFICATION: Message Authentication Code (Hash) Protocol
+================================================================================
+Description:
+    This protocol models a scenario where an Initiator and a Responder want to 
+    ensure that their messages are not tampered with by an active network 
+    intruder. They do not care if the message is read by others, so they do 
+    not encrypt the message itself.
+
+    They achieve integrity and authentication by using a shared secret key 
+    and a One-Way Hash Function. 
+================================================================================
+*/
+
+/* Global Declarations:
+   1. We declare a custom data type named 'MessageText' for the payload.
+   2. We MUST explicitly declare any hash function globally before using it. 
+      By default, Scyther treats this as a perfect one-way function, meaning 
+      you cannot reverse the output to discover the inputs.
+*/
+usertype MessageText;
+hashfunction SecureHash;
+
+protocol MessageAuthenticationProtocol(Initiator, Responder) 
+{
+    /* ========================================================================
+       ROLE: Initiator
+       ========================================================================
+       This role defines the party who starts the communication by sending a 
+       plain-text message paired with a Message Authentication Code.
+    */
+    role Initiator 
+    {
+        /* Local Declarations:
+           A fresh message to send, and a variable to store the incoming reply.
+        */
+        fresh InitiatorMessage: MessageText;
+        var ResponderMessage: MessageText;
+
+        /* Step 1: Send the message and the Message Authentication Code.
+           The Initiator sends a paired package (indicated by the parentheses).
+           
+           Syntax Explanation:
+           - 'InitiatorMessage' is sent completely in the clear (plain-text).
+           - 'SecureHash(k(Initiator, Responder), InitiatorMessage)' is the MAC. 
+             It hashes the pre-shared symmetric key and the message together.
+        */
+        send_1(Initiator, Responder, (InitiatorMessage, SecureHash(k(Initiator, Responder), InitiatorMessage)));
+
+        /* Step 2: Receive the authenticated reply.
+           The Initiator expects a paired package back. Scyther will automatically 
+           take the plain-text 'ResponderMessage' from the first half of the pair, 
+           combine it with the long-term key 'k(Initiator, Responder)', and 
+           calculate the 'SecureHash'. If it does not perfectly match the second 
+           half of the received pair, the message is rejected.
+        */
+        recv_2(Responder, Initiator, (ResponderMessage, SecureHash(k(Initiator, Responder), ResponderMessage)));
+
+        /* Security Claims / Properties for the Initiator:
+           
+           Claim 1 (Niagree - Non-Injective Agreement): We ask Scyther to verify 
+           that the Responder actually sent this specific message and that it 
+           was not tampered with by the network intruder.
+           Expectation: This will PASS because the intruder cannot forge the hash 
+           without knowing the secret key.
+        */
+        claim(Initiator, Niagree);
+
+        /* Claim 2 (Alive): We verify that the Responder is actively participating.
+        */
+        claim(Initiator, Alive);
+    };
+
+    /* ========================================================================
+       ROLE: Responder
+       ========================================================================
+       This role receives the transmission, verifies the hash using their shared 
+       key, and replies with their own hashed message.
+    */
+    role Responder 
+    {
+        /* Local Declarations:
+           A variable for the incoming text, and a fresh text for the reply.
+        */
+        var InitiatorMessage: MessageText;
+        fresh ResponderMessage: MessageText;
+
+        /* Step 1: Receive the message and verify the hash.
+           The Responder receives the paired package. Because they possess the 
+           key 'k(Initiator, Responder)', the structural pattern match succeeds 
+           if the sender used the correct key.
+        */
+        recv_1(Initiator, Responder, (InitiatorMessage, SecureHash(k(Initiator, Responder), InitiatorMessage)));
+
+        /* Step 2: Send the authenticated reply.
+           The Responder creates their own Message Authentication Code using 
+           the shared key and their new message.
+        */
+        send_2(Responder, Initiator, (ResponderMessage, SecureHash(k(Initiator, Responder), ResponderMessage)));
+
+        /* Security Claims / Properties for the Responder:
+           
+           Claim 1 (Niagree): We ask Scyther to verify that the message strictly 
+           originated from the Initiator and arrived unaltered.
+           Expectation: This will PASS.
+        */
+        claim(Responder, Niagree);
+
+        /* Claim 2 (Alive): We verify the Initiator is actively alive.
+        */
+        claim(Responder, Alive);
+    };
+};

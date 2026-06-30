@@ -1,0 +1,185 @@
+// -----------------------------------------------------------------------------
+//                      S2KG Protocol Description for Scyther
+// 
+// This file models the LoRaWAN Server Session Key Generation (S2KG) method.
+// It is divided into two distinct procedures as defined in the S2KG protocol:
+// 1. Join Server Related Key Generation (using Public Key Cryptography)
+// 2. Symmetric-Key Based Key Generation (using Symmetric Key Cryptography)
+//
+// Abbreviations have been fully expanded for maximum clarity.
+// -----------------------------------------------------------------------------
+
+// We define a global hash function used for deriving keys and ensuring integrity.
+hashfunction Hash;
+
+// =============================================================================
+// Procedure 1: Join Server Related Key Generation Procedure
+// =============================================================================
+// This procedure generates a session key between the Join Server and another 
+// server (e.g., the Home Network Server) using Elliptic Curve Cryptography (ECC).
+// In SPDL, we abstract the ECC encryption into standard public key encryption.
+
+protocol S2KGJoinServerRelatedKeyGeneration(HomeNetworkServer, JoinServer) {
+    
+    role HomeNetworkServer {
+        // Step 1: Generate fresh, random values for the current session.
+        fresh ephemeralprivatekeyHomeNetworkServer: Nonce;
+        fresh timestampHomeNetworkServer: Nonce;
+
+        // Abstraction Note: In the actual protocol, the Home Network Server 
+        // calculates an ECC ciphertext. To model this cleanly in Scyther, 
+        // we use standard asymmetric encryption with the Join Server's public key.
+        // We package the ephemeral private key and timestamp into the payload.
+        send_1(HomeNetworkServer, JoinServer, 
+               HomeNetworkServer, 
+               { timestampHomeNetworkServer, ephemeralprivatekeyHomeNetworkServer, HomeNetworkServer }pk(JoinServer)
+        );
+
+        // Define a macro for the generated session key. 
+        // This abstracts the Diffie-Hellman key derivation process.
+        macro sessionkeyHomeNetworkServerJoinServer = 
+              Hash(timestampHomeNetworkServer, ephemeralprivatekeyHomeNetworkServer, pk(JoinServer));
+        
+        // Step 3: Receive the acknowledgment from the Join Server.
+        // It should be symmetrically encrypted using the newly derived session key.
+        var timestampJoinServer: Nonce;
+        
+        recv_2(JoinServer, HomeNetworkServer, 
+               { timestampHomeNetworkServer, timestampJoinServer }sessionkeyHomeNetworkServerJoinServer
+        );
+
+        // Security Claims: Ensure the session key remains completely secret, 
+        // and that both servers successfully agree and synchronize.
+        claim(HomeNetworkServer, Secret, sessionkeyHomeNetworkServerJoinServer);
+        claim(HomeNetworkServer, Niagree);
+        claim(HomeNetworkServer, Nisynch);
+    };
+
+    role JoinServer {
+        // Variables to hold the values received from the Home Network Server.
+        var ephemeralprivatekeyHomeNetworkServer: Nonce;
+        var timestampHomeNetworkServer: Nonce;
+
+        // Step 2: Receive and decrypt the initial request using the Join Server's private key.
+        recv_1(HomeNetworkServer, JoinServer, 
+               HomeNetworkServer, 
+               { timestampHomeNetworkServer, ephemeralprivatekeyHomeNetworkServer, HomeNetworkServer }pk(JoinServer)
+        );
+
+        // Generate a fresh timestamp for the Join Server's response.
+        fresh timestampJoinServer: Nonce;
+        
+        // The Join Server computes the exact same session key using the received parameters.
+        macro sessionkeyHomeNetworkServerJoinServer = 
+              Hash(timestampHomeNetworkServer, ephemeralprivatekeyHomeNetworkServer, pk(JoinServer));
+        
+        // Send the acknowledgment back, protected by the new session key.
+        send_2(JoinServer, HomeNetworkServer, 
+               { timestampHomeNetworkServer, timestampJoinServer }sessionkeyHomeNetworkServerJoinServer
+        );
+
+        // Security Claims
+        claim(JoinServer, Secret, sessionkeyHomeNetworkServerJoinServer);
+        claim(JoinServer, Niagree);
+        claim(JoinServer, Nisynch);
+    };
+};
+
+// =============================================================================
+// Procedure 2: Symmetric-Key Based Key Generation Procedure
+// =============================================================================
+// This procedure generates a session key between two servers (e.g., Serving 
+// Network Server and Home Network Server) that do not directly share a key, 
+// using the Join Server as a trusted third party.
+
+protocol S2KGSymmetricKeyBasedKeyGeneration(ServingNetworkServer, JoinServer, HomeNetworkServer) {
+
+    role ServingNetworkServer {
+        // Step 1: Generate fresh timestamp and a random beta contribution.
+        fresh timestampServingNetworkServer: Nonce;
+        fresh randombetaServingNetworkServer: Nonce; 
+
+        // Send a request to the Join Server, symmetrically encrypted with their pre-shared key.
+        send_1(ServingNetworkServer, JoinServer, 
+               ServingNetworkServer, HomeNetworkServer, timestampServingNetworkServer, 
+               { randombetaServingNetworkServer, ServingNetworkServer, timestampServingNetworkServer }k(ServingNetworkServer, JoinServer)
+        );
+
+        // Define a macro for the temporal key. In the paper, this is derived 
+        // using the beta value and the Join Server's public key.
+        macro temporalkey = Hash(randombetaServingNetworkServer, pk(JoinServer));
+
+        // Variables for the final response from the Home Network Server.
+        var randombetaHomeNetworkServer: Nonce;
+        var timestampHomeNetworkServer: Nonce;
+
+        // Step 4: Receive the encrypted response from the Home Network Server.
+        recv_3(HomeNetworkServer, ServingNetworkServer, 
+               HomeNetworkServer, ServingNetworkServer, timestampHomeNetworkServer, 
+               { randombetaHomeNetworkServer, ServingNetworkServer, HomeNetworkServer, timestampHomeNetworkServer }temporalkey
+        );
+
+        // Compute the final end-to-end session key using both random beta contributions.
+        macro sessionkeyHomeServing = Hash(randombetaHomeNetworkServer, randombetaServingNetworkServer);
+
+        // Security Claims
+        claim(ServingNetworkServer, Secret, sessionkeyHomeServing);
+        claim(ServingNetworkServer, Niagree);
+        claim(ServingNetworkServer, Nisynch);
+    };
+
+    role JoinServer {
+        // Variables to hold the Serving Network Server's payload.
+        var timestampServingNetworkServer: Nonce;
+        var randombetaServingNetworkServer: Nonce;
+
+        // Step 2: Receive the request and decrypt it using the pre-shared key.
+        recv_1(ServingNetworkServer, JoinServer, 
+               ServingNetworkServer, HomeNetworkServer, timestampServingNetworkServer, 
+               { randombetaServingNetworkServer, ServingNetworkServer, timestampServingNetworkServer }k(ServingNetworkServer, JoinServer)
+        );
+
+        // Generate a fresh timestamp for the invite message.
+        fresh timestampJoinServer: Nonce;
+
+        // Send an invite to the Home Network Server, symmetrically encrypted with their shared key.
+        // It forwards the Serving Network Server's random beta contribution.
+        send_2(JoinServer, HomeNetworkServer, 
+               timestampJoinServer, 
+               { randombetaServingNetworkServer, ServingNetworkServer, HomeNetworkServer, timestampJoinServer }k(HomeNetworkServer, JoinServer)
+        );
+    };
+
+    role HomeNetworkServer {
+        // Variables to hold the forwarded payload from the Join Server.
+        var timestampJoinServer: Nonce;
+        var randombetaServingNetworkServer: Nonce;
+        
+        // Receive the invite from the Join Server.
+        recv_2(JoinServer, HomeNetworkServer, 
+               timestampJoinServer, 
+               { randombetaServingNetworkServer, ServingNetworkServer, HomeNetworkServer, timestampJoinServer }k(HomeNetworkServer, JoinServer)
+        );
+
+        // Step 3: Generate own fresh parameters for the response.
+        fresh randombetaHomeNetworkServer: Nonce;
+        fresh timestampHomeNetworkServer: Nonce;
+        
+        // Reconstruct the temporal key to encrypt the response for the Serving Network Server.
+        macro temporalkey = Hash(randombetaServingNetworkServer, pk(JoinServer));
+
+        // Send the response directly to the Serving Network Server.
+        send_3(HomeNetworkServer, ServingNetworkServer, 
+               HomeNetworkServer, ServingNetworkServer, timestampHomeNetworkServer, 
+               { randombetaHomeNetworkServer, ServingNetworkServer, HomeNetworkServer, timestampHomeNetworkServer }temporalkey
+        );
+
+        // Compute the final end-to-end session key.
+        macro sessionkeyHomeServing = Hash(randombetaHomeNetworkServer, randombetaServingNetworkServer);
+
+        // Security Claims
+        claim(HomeNetworkServer, Secret, sessionkeyHomeServing);
+        claim(HomeNetworkServer, Niagree);
+        claim(HomeNetworkServer, Nisynch);
+    };
+};
