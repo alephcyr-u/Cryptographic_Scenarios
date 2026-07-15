@@ -1,0 +1,56 @@
+const pk: Function;
+secret sk: Function;
+inversekeys(pk, sk);
+
+protocol S2KGGENKEY(NS, JS)
+{
+    role NS
+    {
+        fresh nNS: Nonce;
+        var nJS: Nonce;
+        var SK: Nonce;
+
+        send_1(NS, JS, 
+            {NS, JS, nNS}pk(JS)
+        );
+
+        recv_2(JS, NS, 
+            {JS, NS, nNS, nJS, SK}pk(NS)
+        );
+
+        send_3(NS, JS, 
+            {NS, JS, nNS, nJS}SK
+        );
+
+        claim_NS1(NS, Secret, SK);
+        claim_NS2(NS, Alive);
+        claim_NS3(NS, Weakagree);
+        claim_NS4(NS, Niagree);
+        claim_NS5(NS, Nisynch);
+    }
+
+    role JS
+    {
+        var nNS: Nonce;
+        fresh nJS: Nonce;
+        fresh SK: Nonce;
+
+        recv_1(NS, JS, 
+            {NS, JS, nNS}pk(JS)
+        );
+
+        send_2(JS, NS, 
+            {JS, NS, nNS, nJS, SK}pk(NS)
+        );
+
+        recv_3(NS, JS, 
+            {NS, JS, nNS, nJS}SK
+        );
+
+        claim_JS1(JS, Secret, SK);
+        claim_JS2(JS, Alive);
+        claim_JS3(JS, Weakagree);
+        claim_JS4(JS, Niagree);
+        claim_JS5(JS, Nisynch);
+    }
+}
